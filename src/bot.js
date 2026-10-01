@@ -75,6 +75,15 @@ bot.use(
 );
 bot.use(conversations());
 
+// Reject protected callbacks before they can enter conversations.
+bot.use(async (ctx, next) => {
+  const data = ctx.callbackQuery?.data || '';
+  if (/^(admin_|att_|del_student:|ai_gen_subj:)/.test(data) && !isAdmin(ctx.from?.id)) {
+    return ctx.answerCallbackQuery({ text: 'Bu amal faqat admin uchun!', show_alert: true });
+  }
+  return next();
+});
+
 // Register Conversations
 bot.use(createConversation(addStudentConversation));
 bot.use(createConversation(editScheduleConversation));
@@ -140,8 +149,8 @@ bot.callbackQuery(/^link_student:/, linkStudentCallback);
 bot.callbackQuery(/^att_/, attendanceCallbackHandler);
 
 // Admin callbacks
-bot.callbackQuery("admin_add_student", (ctx) => {
-  ctx.answerCallbackQuery();
+bot.callbackQuery("admin_add_student", async (ctx) => {
+  await ctx.answerCallbackQuery();
   return ctx.conversation.enter("addStudentConversation");
 });
 bot.callbackQuery("admin_delete_student_list", showDeleteStudentMenu);
@@ -149,8 +158,8 @@ bot.callbackQuery(/^del_student:/, deleteStudentCallback);
 bot.callbackQuery("admin_reset_all_confirm", confirmResetAllStudents);
 bot.callbackQuery("admin_reset_all_execute", executeResetAllStudents);
 bot.callbackQuery("admin_reset_all_cancel", cancelResetAllStudents);
-bot.callbackQuery("admin_edit_schedule", (ctx) => {
-  ctx.answerCallbackQuery();
+bot.callbackQuery("admin_edit_schedule", async (ctx) => {
+  await ctx.answerCallbackQuery();
   return ctx.conversation.enter("editScheduleConversation");
 });
 bot.callbackQuery("admin_clear_schedule_prompt", showClearSchedulePrompt);

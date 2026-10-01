@@ -126,6 +126,7 @@ export async function startAttendanceHandler(ctx) {
  * @param {import("grammy").Context} ctx
  */
 export async function attendanceCallbackHandler(ctx) {
+  if (!isAdmin(ctx.from?.id)) return;
   const data = ctx.callbackQuery.data;
 
   // 1. Refresh

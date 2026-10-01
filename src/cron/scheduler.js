@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { claimScheduledRun } from "../services/scheduler-lock.service.js";
 import { prisma } from "../database/prisma.js";
 import { config } from "../config/config.js";
 import { createAndPublishAiQuiz } from "../services/ai.service.js";
@@ -8,28 +9,39 @@ import { createAndPublishAiQuiz } from "../services/ai.service.js";
  * @param {import("grammy").Bot} bot
  */
 export function initScheduler(bot) {
+  const tasks = [];
+  const schedule = (expression, callback, options) => {
+    tasks.push(cron.schedule(expression, async () => {
+      try {
+        const slot = new Date().toISOString().slice(0, 16);
+        if (await claimScheduledRun(prisma, expression, slot)) await callback();
+      } catch (error) {
+        console.error("Rejalashtirilgan vazifa xatosi:", error);
+      }
+    }, { ...options, noOverlap: true }));
+  };
   // 1. DUSHANBA SOAT 12:00 — AI 6-sinf fani bo'yicha 15 talik yangi test yaratadi (Chorshanba 12:00 gacha)
-  cron.schedule("0 12 * * 1", async () => {
+  schedule("0 12 * * 1", async () => {
     try {
       console.log("⏰ Cron: Dushanba 12:00 AI test generatsiyasi boshlandi...");
       await createAndPublishAiQuiz(null, 48, bot); // 48 soat -> Chorshanba 12:00 da tugaydi
     } catch (error) {
       console.error("Cron: Dushanba AI test yaratishda xatolik:", error);
     }
-  });
+  }, { timezone: config.timezone });
 
   // 2. PAYSHANBA SOAT 12:00 — AI keyingi fan bo'yicha 15 talik yangi test yaratadi (Shanba 12:00 gacha)
-  cron.schedule("0 12 * * 4", async () => {
+  schedule("0 12 * * 4", async () => {
     try {
       console.log("⏰ Cron: Payshanba 12:00 AI test generatsiyasi boshlandi...");
       await createAndPublishAiQuiz(null, 48, bot); // 48 soat -> Shanba 12:00 da tugaydi
     } catch (error) {
       console.error("Cron: Payshanba AI test yaratishda xatolik:", error);
     }
-  });
+  }, { timezone: config.timezone });
 
   // 3. Har 1 minutda: Muddati o'tgan testlarni avtomatik yopish (Chorshanba va Shanba 12:00 larda ham ishlaydi)
-  cron.schedule("* * * * *", async () => {
+  schedule("* * * * *", async () => {
     try {
       const now = new Date();
       const expiredQuizzes = await prisma.quiz.findMany({
@@ -63,10 +75,10 @@ export function initScheduler(bot) {
     } catch (error) {
       console.error("Cron: Testlarni tekshirishda xatolik:", error);
     }
-  });
+  }, { timezone: config.timezone });
 
   // 4. Har kuni soat 20:00 da: Ertangi dars jadvali eslatmasi
-  cron.schedule("0 20 * * *", async () => {
+  schedule("0 20 * * *", async () => {
     try {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -114,10 +126,10 @@ export function initScheduler(bot) {
     } catch (error) {
       console.error("Cron: Dars jadvali eslatmasida xatolik:", error);
     }
-  });
+  }, { timezone: config.timezone });
 
   // 5. Har kuni soat 12:20 da: Adminga davomat eslatmasi (2-smena Dushanba-Shanba)
-  cron.schedule("20 12 * * 1-6", async () => {
+  schedule("20 12 * * 1-6", async () => {
     try {
       for (const adminId of config.adminIds) {
         try {
@@ -131,7 +143,8 @@ export function initScheduler(bot) {
     } catch (error) {
       console.error("Cron: Davomat eslatmasida xatolik:", error);
     }
-  });
+  }, { timezone: config.timezone });
 
   console.log("⏰ Avtomatik vazifalar (AI Testlar, Dars Jadvali, Davomat Cron) faollashtirildi.");
+  return tasks;
 }

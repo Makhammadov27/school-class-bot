@@ -19,9 +19,9 @@ export async function broadcastConversation(conversation, ctx) {
     return ctx.reply("❌ E'lon bekor qilindi.");
   }
 
-  const students = await prisma.student.findMany({
+  const students = await conversation.external(() => prisma.student.findMany({
     where: { telegramId: { not: null } },
-  });
+  }));
 
   if (students.length === 0) {
     return ctx.reply("❌ Botga ulangan o'quvchilar mavjud emas.");

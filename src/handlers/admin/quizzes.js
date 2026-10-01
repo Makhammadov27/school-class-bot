@@ -207,7 +207,7 @@ export async function triggerAiQuizCallback(ctx) {
   });
 
   try {
-    const createdQuiz = await createAndPublishAiQuiz(subject, 48, ctx.api);
+    const createdQuiz = await createAndPublishAiQuiz(subject, 48, { api: ctx.api });
 
     await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id);
 
@@ -258,6 +258,7 @@ export async function showCloseQuizMenu(ctx) {
  * Close quiz callback
  */
 export async function closeQuizCallback(ctx) {
+  if (!isAdmin(ctx.from?.id)) return;
   const quizId = parseInt(ctx.callbackQuery.data.split(":")[1], 10);
   await prisma.quiz.update({
     where: { id: quizId },

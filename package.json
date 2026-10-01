@@ -8,7 +8,8 @@
     "start": "node src/bot.js",
     "dev": "node --watch src/bot.js",
     "prisma:generate": "npx prisma generate",
-    "prisma:push": "npx prisma db push"
+    "prisma:push": "npx prisma db push",
+    "test": "node --test test/regression.test.js"
   },
   "keywords": [
     "telegram-bot",

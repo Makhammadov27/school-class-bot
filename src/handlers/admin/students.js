@@ -134,6 +134,7 @@ function parseStudentLine(line) {
  * Conversation: Add new student
  */
 export async function addStudentConversation(conversation, ctx) {
+  if (!isAdmin(ctx.from?.id)) return;
   await ctx.reply(
     "✏️ <b>YANGI O'QUVChI(LAR)NI QO'SHISH:</b>\n\n" +
     "O'quvchining Ism Familiyasini va ixtiyoriy PIN-kodini yozib yuboring.\n\n" +
@@ -165,12 +166,12 @@ export async function addStudentConversation(conversation, ctx) {
   for (const line of lines) {
     const parsed = parseStudentLine(line);
     if (parsed.fullName.length >= 2) {
-      const created = await prisma.student.create({
+      const created = await conversation.external(() => prisma.student.create({
         data: {
           fullName: parsed.fullName,
           pinCode: parsed.pinCode,
         },
-      });
+      }));
       addedList.push(created);
     }
   }
@@ -210,6 +211,7 @@ export async function showDeleteStudentMenu(ctx) {
  * Callback to delete student
  */
 export async function deleteStudentCallback(ctx) {
+  if (!isAdmin(ctx.from?.id)) return;
   const studentId = parseInt(ctx.callbackQuery.data.split(":")[1], 10);
   const student = await prisma.student.findUnique({
     where: { id: studentId },
@@ -236,9 +238,9 @@ export async function deleteStudentCallback(ctx) {
 export async function giveBonusConversation(conversation, ctx) {
   if (!isAdmin(ctx.from.id)) return;
 
-  const students = await prisma.student.findMany({
+  const students = await conversation.external(() => prisma.student.findMany({
     orderBy: { fullName: "asc" },
-  });
+  }));
 
   if (students.length === 0) {
     return ctx.reply("Sinfda o'quvchilar mavjud emas.");
@@ -256,7 +258,7 @@ export async function giveBonusConversation(conversation, ctx) {
   if (idMsg.message?.text === "/cancel") return ctx.reply("❌ Bekor qilindi.");
 
   const studentId = parseInt(idMsg.message?.text, 10);
-  const student = await prisma.student.findUnique({ where: { id: studentId } });
+  const student = await conversation.external(() => prisma.student.findUnique({ where: { id: studentId } }));
 
   if (!student) {
     return ctx.reply("❌ Bunday ID ga ega o'quvchi topilmadi.");
@@ -275,10 +277,10 @@ export async function giveBonusConversation(conversation, ctx) {
     return ctx.reply("❌ Noto'g'ri son kiritildi. Amal bekor qilindi.");
   }
 
-  const updated = await prisma.student.update({
+  const updated = await conversation.external(() => prisma.student.update({
     where: { id: studentId },
     data: { bonusPoints: { increment: points } },
-  });
+  }));
 
   return ctx.reply(
     `✅ <b>${student.fullName}</b> ga <b>${points > 0 ? "+" : ""}${points} ball</b> qo'shildi!\n` +

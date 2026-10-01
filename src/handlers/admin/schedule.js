@@ -188,6 +188,7 @@ export async function editScheduleConversation(conversation, ctx) {
   );
 
   const extraMsg = await conversation.wait();
+  if (extraMsg.message?.text === "/cancel") return ctx.reply("❌ Bekor qilindi.");
   let extra = extraMsg.message?.text;
   let room = null;
   let teacher = null;
@@ -197,7 +198,7 @@ export async function editScheduleConversation(conversation, ctx) {
   }
 
   // Upsert schedule record
-  await prisma.schedule.upsert({
+  await conversation.external(() => prisma.schedule.upsert({
     where: {
       dayOfWeek_lessonOrder: {
         dayOfWeek,
@@ -214,7 +215,7 @@ export async function editScheduleConversation(conversation, ctx) {
       subject,
       teacher,
     },
-  });
+  }));
 
   return ctx.reply(
     `✅ <b>Jadval saqlandi!</b>\n\n` +

@@ -87,9 +87,11 @@ export async function startQuizCallback(ctx) {
     include: { questions: true },
   });
 
-  if (!quiz || !quiz.isActive) {
+  if (!quiz || !quiz.isActive || (quiz.deadline && quiz.deadline <= new Date())) {
     return ctx.answerCallbackQuery({ text: "Bu test yopilgan yoki mavjud emas!", show_alert: true });
   }
+
+  if (!quiz.questions.length) return ctx.answerCallbackQuery({ text: "Testda savollar mavjud emas!", show_alert: true });
 
   // Check if already submitted
   const existingSub = await prisma.quizSubmission.findUnique({
@@ -132,6 +134,9 @@ export async function startQuizCallback(ctx) {
   activeStudentSessions.set(sessionKey, {
     quizId,
     studentId: student.id,
+    userId,
+    messageId: ctx.callbackQuery.message?.message_id,
+    token: crypto.randomUUID().slice(0, 8),
     questionIndex: 0,
     answers: [],
     questions: randomizedQuestions,
@@ -164,7 +169,7 @@ async function renderQuestion(ctx, sessionKey) {
 
   const keyboard = new InlineKeyboard();
   options.forEach((_, idx) => {
-    keyboard.text(`${letters[idx]}`, `ans_q:${sessionKey}:${idx}`);
+    keyboard.text(`${letters[idx]}`, `ans_q:${sessionKey}:${idx}:${session.questionIndex}:${session.token}`);
   });
 
   if (ctx.callbackQuery) {
@@ -194,6 +199,18 @@ export async function answerQuestionCallback(ctx) {
     return;
   }
 
+  if (session.userId !== String(ctx.from.id) || session.messageId !== ctx.callbackQuery.message?.message_id ||
+      parts[4] !== session.token || Number(parts[3]) !== session.questionIndex ||
+      !Number.isInteger(choiceIndex) || choiceIndex < 0 || choiceIndex >= JSON.parse(session.questions[session.questionIndex].options).length) {
+    return ctx.answerCallbackQuery({ text: "Bu javob tugmasi eskirgan yoki sizga tegishli emas!", show_alert: true });
+  }
+  const quiz = await prisma.quiz.findUnique({ where: { id: session.quizId } });
+  if (!quiz || !quiz.isActive || (quiz.deadline && quiz.deadline <= new Date())) {
+    activeStudentSessions.delete(sessionKey);
+    return ctx.answerCallbackQuery({ text: "Test muddati tugagan yoki yopilgan!", show_alert: true });
+  }
+  // Recheck after the database await to reject concurrent duplicate callbacks.
+  if (Number(parts[3]) !== session.questionIndex) return ctx.answerCallbackQuery({ text: "Javob allaqachon qabul qilingan." });
   session.answers.push(choiceIndex);
   session.questionIndex++;
 
@@ -215,25 +232,27 @@ export async function answerQuestionCallback(ctx) {
   const earnedPoints = score * config.quizPointMultiplier;
 
   // Save submission to DB
-  await prisma.quizSubmission.create({
-    data: {
-      quizId: session.quizId,
-      studentId: session.studentId,
-      score,
-      totalQuestions,
-    },
-  });
-
-  // Update student total points
-  await prisma.student.update({
-    where: { id: session.studentId },
-    data: {
-      points: {
-        increment: earnedPoints,
+  await prisma.$transaction(async (tx) => {
+    await tx.quizSubmission.create({
+      data: {
+        quizId: session.quizId,
+        studentId: session.studentId,
+        score,
+        totalQuestions,
       },
-    },
-  });
+    });
 
+    // Update student total points
+    await tx.student.update({
+      where: { id: session.studentId },
+      data: {
+        points: {
+          increment: earnedPoints,
+        },
+      },
+    });
+
+  });
   activeStudentSessions.delete(sessionKey);
 
   const resultText =
