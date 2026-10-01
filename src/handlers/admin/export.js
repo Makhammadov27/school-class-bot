@@ -7,7 +7,7 @@ import { InputFile } from "grammy";
  * Handle "📊 Statistika & Excel" admin action
  * @param {import("grammy").Context} ctx
  */
-export async function exportMonthlyStatsHandler(ctx) {
+export async function exportMonthlyStatsHandler(ctx, requestedMonth = ctx.match?.trim()) {
   if (!isAdmin(ctx.from.id)) return;
 
   const waitMsg = await ctx.reply("⏳ Hisobot va Excel jadvali tayyorlanmoqda...");
@@ -15,10 +15,15 @@ export async function exportMonthlyStatsHandler(ctx) {
   try {
     const now = new Date();
     const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const yearMonth = requestedMonth || currentYM;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) {
+      await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+      return ctx.reply("❌ Oy noto‘g‘ri. Masalan: <code>/statistika 2026-09</code>", { parse_mode: "HTML" });
+    }
 
-    const { rankings, studentOfTheMonth } = await getStudentLeaderboard(currentYM);
+    const { rankings, studentOfTheMonth } = await getStudentLeaderboard(yearMonth);
 
-    let summaryText = `📊 <b>${currentYM} OYI STATISTIKASI VA OY O'QUVCHISI:</b>\n\n`;
+    let summaryText = `📊 <b>${yearMonth} OYI STATISTIKASI VA OY O'QUVCHISI:</b>\n\n`;
 
     if (studentOfTheMonth && studentOfTheMonth.totalPoints > 0) {
       summaryText +=
@@ -40,11 +45,11 @@ export async function exportMonthlyStatsHandler(ctx) {
     await ctx.reply(summaryText, { parse_mode: "HTML" });
 
     // Generate Excel Buffer
-    const excelBuffer = await generateMonthlyReportExcel(currentYM);
-    const fileName = `Davomat_va_Reyting_${currentYM}.xlsx`;
+    const excelBuffer = await generateMonthlyReportExcel(yearMonth);
+    const fileName = `Davomat_va_Reyting_${yearMonth}.xlsx`;
 
     await ctx.replyWithDocument(new InputFile(excelBuffer, fileName), {
-      caption: `📑 <b>${currentYM} oylik davomat va reyting hisoboti</b>`,
+      caption: `📑 <b>${yearMonth} oylik davomat va reyting hisoboti</b>`,
       parse_mode: "HTML",
     });
 
