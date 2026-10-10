@@ -11,7 +11,7 @@ export function getAdminMainMenu() {
     .row()
     .text("📊 Statistika & Excel").text("📢 E'lon yuborish")
     .row()
-    .text("➕ Qo'shimcha ball berish")
+    .text("➕ Qo'shimcha ball berish").text("🤖 AI Repetitor")
     .resized();
 }
 

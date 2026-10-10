@@ -225,3 +225,60 @@ export async function createAndPublishAiQuiz(subject = null, durationHours = 48,
 
   return createdQuiz;
 }
+
+/**
+ * AI Repetitor / Savol-javob yordamchisi (Gemini Chat)
+ * Maktab o'quvchilari (xususan 6-sinf) uchun savollarga aniq, tushunarli va do'stona javob beradi.
+ * @param {string} question - O'quvchi yoki admin yozgan savol
+ * @param {string} [userName] - Foydalanuvchi ismi
+ * @returns {Promise<string>}
+ */
+export async function askAiTutor(question, userName = "O'quvchi") {
+  const ai = getAiClient();
+
+  const systemInstruction = `
+Siz O'zbekiston maktablarining 6-sinf o'quvchilari uchun mo'ljallangan samimiy, dono va sabrli "AI Repetitor" — virtual ustozsiz.
+Sizning vazifangiz: o'quvchining har qanday maktab fani (Matematika, Ona tili, Adabiyot, Fizika, Informatika, Tarix, Ingliz tili, Geografiya, Biologiya va boshqalar) bo'yicha bergan savoliga tushunarli, aniq va bosqichma-bosqich qilib javob berish.
+
+TALABLAR:
+1. Til: Sof va chiroyli o'zbek tilida (lotin alifbosida).
+2. Uslub: Mehribon ustoz kabi do'stona, rag'batlantiruvchi va 6-sinf bolasi tushunadigan sodda tilda tushuntiring.
+3. Agar misol yoki masala bo'lsa: darhol faqat javobni aytib qo'ymang, balki qadamma-qadam (1-qadam, 2-qadam...) yechilish usulini va qoidasini ko'rsating.
+4. Xabarni Telegram uchun qulay, o'qilishi oson formatda yozing (emojilar, qalin matnlar, punktlar).
+5. O'quvchining ismi: ${userName}.
+`;
+
+  const modelsToTry = [
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+    "gemini-flash-latest",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+  ];
+
+  let lastError = null;
+  for (const modelName of modelsToTry) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          { role: "user", parts: [{ text: `${systemInstruction}\n\nO'quvchi savoli:\n"${question}"` }] },
+        ],
+      });
+
+      const text = response?.text?.trim();
+      if (text) {
+        return text;
+      }
+    } catch (err) {
+      console.warn(`AI Repetitor [${modelName}] xatolik: ${err.message}. Boshqa model sinab ko'rilmoqda...`);
+      lastError = err;
+    }
+  }
+
+  throw new Error(
+    lastError ? lastError.message : "AI Repetitor javob bera olmadi. Iltimos, keyinroq qayta urinib ko'ring."
+  );
+}

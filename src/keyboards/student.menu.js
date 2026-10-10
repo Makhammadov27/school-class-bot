@@ -8,5 +8,7 @@ export function getStudentMainMenu() {
     .text("📝 Mavjud Testlar").text("📅 Dars Jadvali")
     .row()
     .text("🏆 Reyting & Ballarim").text("👤 Profilim")
+    .row()
+    .text("🤖 AI Repetitor")
     .resized();
 }

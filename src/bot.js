@@ -58,6 +58,7 @@ import {
 } from "./handlers/student/stats.js";
 import { exportMonthlyStatsHandler } from "./handlers/admin/export.js";
 import { broadcastConversation } from "./handlers/admin/broadcast.js";
+import { aiTutorConversation } from "./handlers/common/tutor.js";
 
 if (!config.botToken) {
   console.error("❌ Xatolik: .env faylida BOT_TOKEN ko'rsatilmagan!");
@@ -90,6 +91,7 @@ bot.use(createConversation(editScheduleConversation));
 bot.use(createConversation(giveBonusConversation));
 bot.use(createConversation(broadcastConversation));
 bot.use(createConversation(verifyStudentPinConversation));
+bot.use(createConversation(aiTutorConversation));
 
 // -------------------------------------------------------------
 // Commands
@@ -104,6 +106,9 @@ bot.command("clear_all", confirmResetAllStudents);
 bot.command("reset_students", confirmResetAllStudents);
 bot.command("clear_quizzes", confirmClearQuizzesHandler);
 bot.command("shuffle_quiz", shuffleActiveQuizzesHandler);
+bot.command(["ai", "repetitor"], async (ctx) => {
+  return ctx.conversation.enter("aiTutorConversation");
+});
 bot.command("statistika", async (ctx) => {
   if (isAdmin(ctx.from.id)) {
     return exportMonthlyStatsHandler(ctx);
@@ -136,8 +141,11 @@ bot.hears("➕ Qo'shimcha ball berish", async (ctx) => {
 });
 
 // -------------------------------------------------------------
-// Student Menu Actions
+// Student & Common Menu Actions
 // -------------------------------------------------------------
+bot.hears("🤖 AI Repetitor", async (ctx) => {
+  return ctx.conversation.enter("aiTutorConversation");
+});
 bot.hears("📝 Mavjud Testlar", showAvailableQuizzes);
 bot.hears("🏆 Reyting & Ballarim", showStudentLeaderboard);
 bot.hears("👤 Profilim", showStudentProfile);
@@ -197,5 +205,5 @@ bot.catch((err) => {
 // Start scheduler and bot
 initScheduler(bot);
 
-console.log("🚀 Maktab Sinf Boshqaruv Boti (AI Testlar bilan) muvaffaqiyatli ishga tushdi!");
+console.log("🚀 Maktab Sinf Boshqaruv Boti (AI Testlar va AI Repetitor bilan) muvaffaqiyatli ishga tushdi!");
 bot.start();
