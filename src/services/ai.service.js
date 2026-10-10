@@ -248,32 +248,38 @@ TALABLAR:
 5. O'quvchining ismi: ${userName}.
 `;
 
+  // Tezkor va yuklamasi kam bo'lgan modellar birinchi navbatda
   const modelsToTry = [
-    "gemini-3.5-flash",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
-    "gemini-flash-latest",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
+    "gemini-flash-latest",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.5-flash",
   ];
 
   let lastError = null;
   for (const modelName of modelsToTry) {
     try {
-      const response = await ai.models.generateContent({
+      // 12 soniyalik timeout - bitta modelda qotib qolmasligi uchun
+      const generatePromise = ai.models.generateContent({
         model: modelName,
         contents: [
           { role: "user", parts: [{ text: `${systemInstruction}\n\nO'quvchi savoli:\n"${question}"` }] },
         ],
       });
 
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout (12s)")), 12000)
+      );
+
+      const response = await Promise.race([generatePromise, timeoutPromise]);
       const text = response?.text?.trim();
       if (text) {
         return text;
       }
     } catch (err) {
-      console.warn(`AI Repetitor [${modelName}] xatolik: ${err.message}. Boshqa model sinab ko'rilmoqda...`);
+      console.warn(`AI Repetitor [${modelName}] tezkor o'tish: ${err.message}`);
       lastError = err;
     }
   }

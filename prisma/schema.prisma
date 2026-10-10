@@ -83,3 +83,11 @@ model Announcement {
   text      String
   createdAt DateTime @default(now())
 }
+
+model AiUsage {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
