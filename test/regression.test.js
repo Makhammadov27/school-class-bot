@@ -10,6 +10,40 @@ import { startQuizCallback, answerQuestionCallback } from '../src/handlers/stude
 import { deleteStudentCallback, addStudentConversation } from '../src/handlers/admin/students.js';
 import { attendanceCallbackHandler } from '../src/handlers/admin/attendance.js';
 import { closeQuizCallback } from '../src/handlers/admin/quizzes.js';
+import { validateGeneratedQuiz } from '../src/services/ai.service.js';
+
+function makeValidQuiz() {
+  return {
+    subject: 'Matematika',
+    title: 'Haftalik test',
+    questions: Array.from({ length: 15 }, (_, index) => ({
+      text: `Yangi masala ${index + 100} uchun qiymatni toping?`,
+      options: [`Birinchi ${index}`, `Ikkinchi ${index}`, `Uchinchi ${index}`, `Tortinchi ${index}`],
+      correctIndex: index % 4,
+    })),
+  };
+}
+
+test('generated quiz must contain 15 valid questions with no recent near-duplicates', () => {
+  const quiz = makeValidQuiz();
+  assert.equal(validateGeneratedQuiz(quiz, 'Matematika').questions.length, 15);
+
+  const repeated = makeValidQuiz();
+  repeated.questions[5].text = repeated.questions[4].text;
+  assert.throws(() => validateGeneratedQuiz(repeated, 'Matematika'), /o'xshash/);
+  assert.throws(
+    () => validateGeneratedQuiz(makeValidQuiz(), 'Matematika', [makeValidQuiz().questions[0].text]),
+    /o'xshash/,
+  );
+
+  const invalid = makeValidQuiz();
+  invalid.questions.pop();
+  assert.throws(() => validateGeneratedQuiz(invalid, 'Matematika'), /15 ta/);
+});
+
+test('generated quiz must not silently relabel another subject', () => {
+  assert.throws(() => validateGeneratedQuiz(makeValidQuiz(), 'Tarix'), /fan nomi noto'g'ri/);
+});
 
 test('two processes sharing SQLite execute a scheduled slot once', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'school-bot-test-'));

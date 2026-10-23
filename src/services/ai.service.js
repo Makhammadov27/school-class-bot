@@ -1,7 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { config } from "../config/config.js";
 import { prisma } from "../database/prisma.js";
-import { QUESTION_BANK_GRADE_6 } from "./questionBank.js";
 
 export const GRADE_6_SUBJECTS = [
   "Ona tili",
@@ -52,6 +51,133 @@ export function shuffleQuestion(q) {
   };
 }
 
+const QUIZ_STYLES = [
+  "hayotiy vaziyatga asoslangan masalalar",
+  "mantiqiy fikrlash va sabab-oqibatni topish",
+  "xatoni aniqlash va to'g'ri qoida bilan tuzatish",
+  "tushuncha va misollarni farqlash",
+  "qisqa matn yoki berilgan ma'lumotni tahlil qilish",
+  "osondan murakkabga qarab aralash savollar",
+];
+
+const QUESTION_STOP_WORDS = new Set([
+  "bu", "va", "yoki", "ham", "bilan", "uchun", "qaysi", "qanday", "necha", "nima",
+  "toping", "aniqlang", "hisoblang", "bo'ladi", "bo'lsa", "haqida", "ekan", "eng",
+]);
+
+function normalizeQuestion(text) {
+  return String(text)
+    .toLocaleLowerCase("uz-UZ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function questionTerms(text) {
+  return new Set(
+    normalizeQuestion(text)
+      .split(" ")
+      .filter((term) => term.length > 2 && !QUESTION_STOP_WORDS.has(term)),
+  );
+}
+
+function isTooSimilar(question, previousQuestions) {
+  const terms = questionTerms(question);
+  if (!terms.size) return false;
+
+  return previousQuestions.some((previous) => {
+    const previousNormalized = normalizeQuestion(previous);
+    if (normalizeQuestion(question) === previousNormalized) return true;
+
+    const previousTerms = questionTerms(previous);
+    if (!previousTerms.size) return false;
+    const intersection = [...terms].filter((term) => previousTerms.has(term)).length;
+    const union = new Set([...terms, ...previousTerms]).size;
+    return union > 4 && intersection / union >= 0.8;
+  });
+}
+
+export function validateGeneratedQuiz(quizData, subject, previousQuestions = []) {
+  if (!quizData || quizData.subject !== subject || typeof quizData.title !== "string" || !quizData.title.trim()) {
+    throw new Error("Test sarlavhasi yoki fan nomi noto'g'ri.");
+  }
+  if (!Array.isArray(quizData.questions) || quizData.questions.length !== 15) {
+    throw new Error("AI aynan 15 ta savol yaratmadi.");
+  }
+
+  const seenQuestions = [];
+  for (const [index, question] of quizData.questions.entries()) {
+    if (
+      !question ||
+      typeof question.text !== "string" ||
+      !question.text.trim() ||
+      !Array.isArray(question.options) ||
+      question.options.length !== 4 ||
+      question.options.some((option) => typeof option !== "string" || !option.trim()) ||
+      new Set(question.options.map((option) => normalizeQuestion(option))).size !== 4 ||
+      !Number.isInteger(question.correctIndex) ||
+      question.correctIndex < 0 ||
+      question.correctIndex > 3
+    ) {
+      throw new Error(`${index + 1}-savol formati noto'g'ri.`);
+    }
+
+    if (isTooSimilar(question.text, [...seenQuestions, ...previousQuestions])) {
+      throw new Error(`${index + 1}-savol oldingi testdagi savolga juda o'xshash.`);
+    }
+    seenQuestions.push(question.text);
+  }
+  return quizData;
+}
+
+function buildQuizPrompt(subject, recentQuizzes, style) {
+  const recentQuestionTexts = recentQuizzes
+    .flatMap((quiz) => quiz.questions.map((question) => question.text))
+    .filter(Boolean)
+    .slice(0, 60)
+    .map((question) => question.slice(0, 250));
+
+  return `
+Siz O'zbekiston umumta'lim maktablarining 6-sinf darsliklari bo'yicha yetakchi metodist va o'qituvchisiz.
+6-sinf "${subject}" fani bo'yicha o'quvchilarga aynan 15 ta yangi va sifatli test savoli tuzing.
+
+BU HAFTANING USLUBI: ${style}.
+
+TALABLAR:
+1. Faqat O'zbekiston 6-sinf "${subject}" darsligi doirasidagi tushunchalardan foydalaning. Mavzudan tashqari faktlarni o'ylab topmang.
+2. Savollar faqat yodlashga emas, tushunish, qo'llash va fikrlashga ham yo'naltirilsin.
+3. Oldingi savollarni aynan takrorlamang va boshqa so'zlar bilan qayta yozmang. Imkon qadar boshqa mavzu, ko'nikma va vaziyatlardan foydalaning.
+4. Savollar oldingi testdagilarga o'xshamasin. Oldingi savollar:
+${JSON.stringify(recentQuestionTexts)}
+5. Aynan 15 ta savol, har birida mazmunan farqli 4 ta javob varianti bo'lsin; to'g'ri javob indeksi 0 dan 3 gacha butun son bo'lsin.
+6. To'g'ri javoblar indeksini test bo'ylab muvozanatli taqsimlang.
+7. Har hafta uslub va savol shakllarini o'zgartiring; savollar aniq, yoshga mos va bir ma'noli bo'lsin.
+8. Javobni faqat quyidagi JSON shaklida qaytaring:
+{
+  "subject": "${subject}",
+  "title": "6-sinf ${subject} haftalik testi — ${style}",
+  "questions": [
+    { "text": "Savol?", "options": ["A", "B", "C", "D"], "correctIndex": 0 }
+  ]
+}
+`;
+}
+
+async function getRecentQuizHistory(subject) {
+  const quizzes = await prisma.quiz.findMany({
+    where: { subject },
+    orderBy: { createdAt: "desc" },
+    take: 4,
+    select: {
+      title: true,
+      questions: { select: { text: true } },
+    },
+  });
+  return quizzes;
+}
+
 /**
  * Generate 15 multiple-choice questions for 6th grade using Gemini AI
  * @param {string} subject
@@ -59,36 +185,20 @@ export function shuffleQuestion(q) {
  */
 export async function generateQuizByAI(subject) {
   const ai = getAiClient();
-
-  const prompt = `
-Siz O'zbekiston umumta'lim maktablarining 6-sinf darsliklari bo'yicha yetakchi metodist va o'qituvchisiz.
-Sizning vazifangiz: 6-sinf "${subject}" fani darsligi asosida o'quvchilar uchun aynan 15 ta sifatli, aniq va darslik mazmuniga mos test savollarini tuzish.
-
-TALABLAR:
-1. Savollar faqat va faqat O'zbekiston 6-sinf "${subject}" darsligi mavzulariga oid bo'lishi shart!
-2. Jami SAVOLLAR SONI: aynan 15 ta bo'lsin.
-3. Har bir savolda 4 ta variant (A, B, C, D) bo'lsin.
-4. JUDA MUHIM: To'g'ri javob (correctIndex) 15 ta savol bo'ylab A (0), B (1), C (2) va D (3) variantlarga TENG va TASODIFIY taqsimlansin! Barcha yoki ko'pchilik savollarning to'g'ri javobi faqat bitta variant (A) bo'lib qolmasin.
-5. Javobni FAQAT quyidagi JSON formatida qaytaring, hech qanday qo'shimcha so'z yoki markdown belgilarisiz:
-
-{
-  "subject": "${subject}",
-  "title": "6-sinf ${subject} fani bo'yicha haftalik test",
-  "questions": [
-    {
-      "text": "Savol matni?",
-      "options": ["Variant 1", "Variant 2", "Variant 3", "Variant 4"],
-      "correctIndex": 2
-    }
-  ]
-}
-`;
+  const recentQuizzes = await getRecentQuizHistory(subject);
+  const previousQuestions = recentQuizzes.flatMap((quiz) => quiz.questions.map((question) => question.text));
+  const unusedStyles = QUIZ_STYLES.filter((candidate) =>
+    !recentQuizzes.some((quiz) => quiz.title?.includes(candidate)),
+  );
+  const availableStyles = unusedStyles.length ? unusedStyles : QUIZ_STYLES;
+  const style = availableStyles[Math.floor(Math.random() * availableStyles.length)];
+  const prompt = buildQuizPrompt(subject, recentQuizzes, style);
 
   const modelsToTry = [
     "gemini-3.8-flash",
-    "gemini-3.7-flash",
     "gemini-3.6-flash",
     "gemini-flash-latest",
+    "gemini-3.5-flash-lite",
   ];
 
   let lastError = null;
@@ -105,25 +215,16 @@ TALABLAR:
       const responseText = response.text.trim();
       const quizData = JSON.parse(responseText);
 
-      if (quizData.questions && quizData.questions.length > 0) {
-        quizData.questions = quizData.questions.map(shuffleQuestion);
-        return quizData;
-      }
+      return validateGeneratedQuiz(quizData, subject, previousQuestions);
     } catch (err) {
       console.warn(`Model ${modelName} bilan xatolik yuz berdi: ${err.message}. Keyingi model sinab ko'rilmoqda...`);
       lastError = err;
     }
   }
 
-  // Fallback if AI provider is blocked by location (e.g. Uzbekistan datacenter IP) or temporarily down
-  console.log(`⚠️ AI server cheklovi (User location / 503) sababli 6-sinf "${subject}" darslik testlar bazasidan 15 ta savol olindi.`);
-  const rawFallback = QUESTION_BANK_GRADE_6[subject] || QUESTION_BANK_GRADE_6["Matematika"];
-  const fallbackQuestions = rawFallback.map(shuffleQuestion);
-  return {
-    subject,
-    title: `6-sinf ${subject} fani bo'yicha haftalik test`,
-    questions: fallbackQuestions,
-  };
+  throw new Error(
+    `Yangi test yaratilmadi: AI javobi oldingi testlarga o'xshadi yoki yaroqsiz bo'ldi. ${lastError?.message || "AI xizmatiga ulanishni tekshiring."}`,
+  );
 }
 
 /**

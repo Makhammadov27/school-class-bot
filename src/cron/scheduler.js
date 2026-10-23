@@ -4,6 +4,19 @@ import { prisma } from "../database/prisma.js";
 import { config } from "../config/config.js";
 import { createAndPublishAiQuiz } from "../services/ai.service.js";
 
+async function notifyAdminsOfQuizGenerationFailure(bot) {
+  for (const adminId of config.adminIds) {
+    try {
+      await bot.api.sendMessage(
+        adminId,
+        "⚠️ Yangi haftalik test yaratilmadi: AI test javobi yaroqsiz yoki oldingi testlarga juda o'xshash bo'ldi. AI ulanishini tekshirib, admin menyusidan qayta urinib ko'ring.",
+      );
+    } catch (error) {
+      console.error("Test yaratilmadi xabarini adminga yuborib bo'lmadi:", error.message);
+    }
+  }
+}
+
 /**
  * Initialize cron jobs for the bot
  * @param {import("grammy").Bot} bot
@@ -27,6 +40,7 @@ export function initScheduler(bot) {
       await createAndPublishAiQuiz(null, 48, bot); // 48 soat -> Chorshanba 12:00 da tugaydi
     } catch (error) {
       console.error("Cron: Dushanba AI test yaratishda xatolik:", error);
+      await notifyAdminsOfQuizGenerationFailure(bot);
     }
   }, { timezone: config.timezone });
 
@@ -37,6 +51,7 @@ export function initScheduler(bot) {
       await createAndPublishAiQuiz(null, 48, bot); // 48 soat -> Shanba 12:00 da tugaydi
     } catch (error) {
       console.error("Cron: Payshanba AI test yaratishda xatolik:", error);
+      await notifyAdminsOfQuizGenerationFailure(bot);
     }
   }, { timezone: config.timezone });
 
